@@ -223,6 +223,9 @@
         <video id="video" playsinline webkit-playsinline muted autoplay></video>
         <div class="frame"></div>
       </div>
+      <div class="hint" style="text-align:center;margin-top:10px;">うまく認識しない場合は下の「撮影して読み取る」がおすすめです（ピントが合いやすい）</div>
+      <input type="file" id="captureInput" accept="image/*" capture="environment" style="display:none;">
+      <button class="btn" id="captureBtn" style="margin-top:10px;">📷 撮影して読み取る</button>
 
       <div class="actions-row">
         <button class="btn secondary" id="resetBtn" style="flex:1;">リセット</button>
@@ -271,6 +274,8 @@
   const logEmpty = $('logEmpty');
   const resetBtn = $('resetBtn');
   const manualBtn = $('manualBtn');
+  const captureBtn = $('captureBtn');
+  const captureInput = $('captureInput');
   const csvBtn = $('csvBtn');
   const manualPanel = $('manualPanel');
   const manualInput = $('manualInput');
@@ -416,7 +421,11 @@
   async function startCamera(){
     try{
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
         audio: false
       });
       video.srcObject = stream;
@@ -545,6 +554,39 @@
     if(confirm('読取り履歴をリセットして最初からやり直しますか？')){
       hardReset();
     }
+  });
+
+  captureBtn.addEventListener('click', () => {
+    captureInput.value = '';
+    captureInput.click();
+  });
+  captureInput.addEventListener('change', () => {
+    const file = captureInput.files && captureInput.files[0];
+    if(!file) return;
+    const img = new Image();
+    const objUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      // 大きい写真はそのまま解析すると重いので、長辺1600pxを目安に縮小しつつ処理
+      const maxSide = 1600;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      const scale = Math.min(1, maxSide / Math.max(w, h));
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const cctx = c.getContext('2d');
+      cctx.drawImage(img, 0, 0, w, h);
+      const imgData = cctx.getImageData(0, 0, w, h);
+      const result = window.jsQR ? jsQR(imgData.data, imgData.width, imgData.height) : null;
+      URL.revokeObjectURL(objUrl);
+      if(result && result.data){
+        handleScan(result.data);
+      } else {
+        locked = true;
+        soundErr();
+        showOverlay('error', 'NG 読取失敗', '写真からQRコードを認識できませんでした。距離・ピント・明るさを変えて再度お試しください。');
+      }
+    };
+    img.src = objUrl;
   });
 
   manualBtn.addEventListener('click', () => {
