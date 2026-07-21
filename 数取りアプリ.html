@@ -5,6 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>QR数取りチェッカー</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.11.0/dist/index.js"></script>
+<script>
+  // zbar-wasm の wasm ファイル位置をCDNに固定
+  window.addEventListener('load', function(){
+    try{
+      if(window.zbarWasm && window.zbarWasm.setModuleArgs){
+        window.zbarWasm.setModuleArgs({
+          locateFile: function(f){ return 'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.11.0/dist/' + f; }
+        });
+      }
+    }catch(e){}
+  });
+</script>
 <style>
   html, body{margin:0;padding:0;}
   :root{
@@ -170,7 +183,7 @@
   .overlay.done{background:var(--green);}
   @keyframes flashRed{0%,100%{background:var(--red);}50%{background:#8f1810;}}
   .overlay .big{font-size:26px;font-weight:800;color:#fff;letter-spacing:.04em;margin-bottom:10px;}
-  .overlay .sub{font-size:15px;color:rgba(255,255,255,.85);margin-bottom:26px;line-height:1.7;font-family:var(--mono);}
+  .overlay .sub{font-size:14px;color:rgba(255,255,255,.9);margin-bottom:22px;line-height:1.6;font-family:var(--mono);max-width:340px;word-break:break-all;max-height:35vh;overflow-y:auto;}
   .overlay .btn{max-width:280px;background:#fff;color:#111;}
   .overlay .btn.csv2{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6);}
 
@@ -315,6 +328,30 @@
   function soundErr(){ beep(220,0.35,'sawtooth'); setTimeout(()=>beep(180,0.4,'sawtooth'),260); }
   function soundDone(){ beep(660,0.14,'sine'); setTimeout(()=>beep(880,0.14,'sine'),140); setTimeout(()=>beep(1320,0.22,'sine'),280); }
 
+  function escapeHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // zbar-wasm(高精度)を優先し、失敗時にjsQRへフォールバック
+  async function decodeImageData(imgData){
+    if(window.zbarWasm && window.zbarWasm.scanImageData){
+      try{
+        const symbols = await window.zbarWasm.scanImageData(imgData);
+        if(symbols && symbols.length){
+          const txt = symbols[0].decode();
+          if(txt) return txt;
+        }
+      }catch(e){}
+    }
+    if(window.jsQR){
+      try{
+        const r = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'attemptBoth' });
+        if(r && r.data) return r.data;
+      }catch(e){}
+    }
+    return null;
+  }
+
   function extractCode(raw){
     if(!raw) return null;
     const tokens = raw.trim().split(/\s+/);
@@ -443,19 +480,28 @@
     if(rafId) cancelAnimationFrame(rafId);
     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
   }
+  let scanBusy = false;
+  let lastScanAt = 0;
   function loopScan(){
     rafId = requestAnimationFrame(loopScan);
     if(locked) return;
     if(Date.now() < cooldownUntil) return;
     if(!video.videoWidth) return;
+    // zbar解析は重いので約300msごとに実行、かつ前回の解析完了を待つ
+    if(scanBusy) return;
+    if(Date.now() - lastScanAt < 300) return;
+    lastScanAt = Date.now();
+    scanBusy = true;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const result = window.jsQR ? jsQR(imgData.data, imgData.width, imgData.height) : null;
-    if(result && result.data){
-      handleScan(result.data);
-    }
+    decodeImageData(imgData).then(result => {
+      scanBusy = false;
+      if(result && !locked){
+        handleScan(result);
+      }
+    }).catch(() => { scanBusy = false; });
   }
 
   function handleScan(rawData){
@@ -466,7 +512,7 @@
       fullLog.push({ no: fullLog.length+1, code: rawData.slice(0,12), result: 'NG(抽出失敗)', time: new Date() });
       locked = true;
       soundErr();
-      showOverlay('error', 'NG 読取エラー', '12桁のコードを抽出できませんでした。');
+      showOverlay('error', 'NG 読取エラー', `12桁のコードを抽出できませんでした。<br><br>読取った生データ:<br>${escapeHtml(rawData)}`);
       return;
     }
     if(scannedSet.has(code)){
@@ -565,25 +611,29 @@
     if(!file) return;
     const img = new Image();
     const objUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      // 大きい写真はそのまま解析すると重いので、長辺1600pxを目安に縮小しつつ処理
-      const maxSide = 1600;
-      let w = img.naturalWidth, h = img.naturalHeight;
-      const scale = Math.min(1, maxSide / Math.max(w, h));
-      w = Math.round(w * scale); h = Math.round(h * scale);
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      const cctx = c.getContext('2d');
-      cctx.drawImage(img, 0, 0, w, h);
-      const imgData = cctx.getImageData(0, 0, w, h);
-      const result = window.jsQR ? jsQR(imgData.data, imgData.width, imgData.height) : null;
+    img.onload = async () => {
+      // 密度の高いQRに備え、複数の解像度で試行（大きめ優先）
+      const targets = [2000, 1600, 1200, Math.max(img.naturalWidth, img.naturalHeight)];
+      let result = null;
+      for(const t of targets){
+        const scale = Math.min(1, t / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const cctx = c.getContext('2d');
+        cctx.drawImage(img, 0, 0, w, h);
+        const imgData = cctx.getImageData(0, 0, w, h);
+        result = await decodeImageData(imgData);
+        if(result) break;
+      }
       URL.revokeObjectURL(objUrl);
-      if(result && result.data){
-        handleScan(result.data);
+      if(result){
+        handleScan(result);
       } else {
         locked = true;
         soundErr();
-        showOverlay('error', 'NG 読取失敗', '写真からQRコードを認識できませんでした。距離・ピント・明るさを変えて再度お試しください。');
+        showOverlay('error', 'NG 読取失敗', '写真からQRコードを認識できませんでした。QRが画面いっぱいに写るよう近づけ、ピント・明るさを合わせて再度お試しください。');
       }
     };
     img.src = objUrl;
