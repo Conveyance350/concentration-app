@@ -363,15 +363,15 @@
 
   function extractCode(raw){
     if(!raw) return null;
+    // 品番は常に12桁（英数字）。空白区切りの独立した12桁トークンを末尾側から探す
     const tokens = raw.trim().split(/\s+/);
     for(let i = tokens.length - 1; i >= 0; i--){
       const t = tokens[i];
-      if(t.length === 12 && /^[0-9A-Za-z]{12}$/.test(t)){
+      if(/^[0-9A-Za-z]{12}$/.test(t)){
         return t;
       }
     }
-    const m = raw.match(/\d{12}/);
-    return m ? m[0] : null;
+    return null; // 12桁が見つからなければ抽出失敗（誤った中間数字を拾わない）
   }
 
   function fmtTime(d){
@@ -524,24 +524,44 @@
     frameBtn.disabled = true;
     frameBtn.textContent = '読取り中…';
     try{
-      // 密度の高いQRに備え複数解像度で試行
       const vw = video.videoWidth, vh = video.videoHeight;
-      const targets = [Math.max(vw, vh), 1600, 1200];
-      let result = null;
-      for(const t of targets){
-        const scale = Math.min(1, t / Math.max(vw, vh));
-        const w = Math.round(vw * scale), h = Math.round(vh * scale);
-        canvas.width = w; canvas.height = h;
-        ctx.drawImage(video, 0, 0, w, h);
-        const imgData = ctx.getImageData(0, 0, w, h);
-        result = await decodeImageData(imgData);
-        if(result) break;
+      // 誤読防止：複数フレームを読み、同じ12桁が2回一致して初めて確定する
+      const counts = {};
+      let confirmed = null;
+      const maxTries = 6; // 約0.1秒間隔で最大6フレーム
+      for(let i = 0; i < maxTries && !confirmed; i++){
+        // 高解像度優先で1フレーム解析
+        let result = null;
+        for(const t of [Math.max(vw, vh), 1400]){
+          const scale = Math.min(1, t / Math.max(vw, vh));
+          const w = Math.round(vw * scale), h = Math.round(vh * scale);
+          canvas.width = w; canvas.height = h;
+          ctx.drawImage(video, 0, 0, w, h);
+          const imgData = ctx.getImageData(0, 0, w, h);
+          result = await decodeImageData(imgData);
+          if(result) break;
+        }
+        if(result){
+          const code = extractCode(result);
+          if(code){
+            counts[code] = (counts[code] || 0) + 1;
+            if(counts[code] >= 2){ confirmed = code; break; }
+          }
+        }
+        await new Promise(r => setTimeout(r, 100));
       }
-      if(result){
-        handleScan(result, 'frame');
+
+      if(confirmed){
+        handleScan(confirmed, 'frame');
       } else {
+        // 2回一致が得られなかった＝不安定。誤NGを避けるため確定しない
+        const seen = Object.keys(counts);
         soundErr();
-        statusLine.textContent = '読み取れませんでした。近づけて再度押すか「📷 撮影」を使用';
+        if(seen.length){
+          statusLine.textContent = '読取りが不安定です。QRを枠内に大きく写して、もう一度押してください';
+        } else {
+          statusLine.textContent = '読み取れませんでした。近づけて再度押すか「📷 撮影」を使用';
+        }
       }
     } finally {
       frameBtn.disabled = false;
