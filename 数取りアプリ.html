@@ -238,6 +238,7 @@
       <div class="scanbox" id="scanbox">
         <video id="video" playsinline webkit-playsinline muted autoplay></video>
         <div class="frame"></div>
+        <div class="camerr" id="camErr" style="display:none;position:absolute;inset:0;background:#000;display:none;align-items:center;justify-content:center;"></div>
       </div>
 
       <button class="btn" id="frameBtn" style="margin-top:12px;font-size:18px;padding:18px;">この1枚を読み取る</button>
@@ -464,11 +465,14 @@
   }
 
   async function startCamera(){
-    // リセット等でvideo要素が差し替わっている場合に備え、毎回取得し直す
     video = document.getElementById('video');
-    // 既存ストリームが残っていれば停止
+    const camErr = document.getElementById('camErr');
+    if(camErr){ camErr.style.display = 'none'; }
+    if(video){ video.style.display = 'block'; }
     if(stream){ try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){} stream = null; }
+    if(video){ try{ video.srcObject = null; }catch(e){} }
     statusLine.classList.add('live');
+    statusLine.textContent = 'カメラを起動しています…';
     try{
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -478,13 +482,25 @@
         },
         audio: false
       });
-      video.srcObject = stream;
       video.setAttribute('playsinline','');
-      await video.play();
+      video.setAttribute('muted','');
+      video.muted = true;
+      video.srcObject = stream;
+      await new Promise((resolve) => {
+        if(video.readyState >= 1){ resolve(); return; }
+        const on = () => { video.removeEventListener('loadedmetadata', on); resolve(); };
+        video.addEventListener('loadedmetadata', on);
+        setTimeout(resolve, 1500);
+      });
+      try{ await video.play(); }catch(e){}
       statusLine.textContent = 'QRを枠内に写して「この1枚を読み取る」を押す';
       statusLine.classList.add('live');
     }catch(err){
-      scanbox.innerHTML = `<div class="camerr">カメラを起動できませんでした。<br>iPhoneの場合は「設定 &gt; Safari &gt; カメラ」で許可を確認してください。<br>カメラが使えない場合は下の「手入力」から登録できます。<br><span style="color:#666">(${err.message||err})</span></div>`;
+      if(video){ video.style.display = 'none'; }
+      if(camErr){
+        camErr.style.display = 'flex';
+        camErr.innerHTML = `カメラを起動できませんでした。<br>iPhoneは「設定 &gt; Safari &gt; カメラ」で許可を確認し、ページを再読込みしてください。<br>カメラが使えない場合は下の「手入力」から登録できます。<br><span style="color:#666">(${escapeHtml(String(err && err.name || err))})</span>`;
+      }
       statusLine.textContent = 'カメラ利用不可 — 手入力を使用してください';
       statusLine.classList.remove('live');
     }
@@ -635,8 +651,12 @@
     hdrBadge.textContent = '未設定';
     screenScan.style.display = 'none';
     screenSetup.style.display = 'block';
-    scanbox.innerHTML = `<video id="video" playsinline webkit-playsinline muted autoplay></video><div class="frame"></div>`;
+    // video要素は作り直さず再利用（iOSでのカメラ再起動失敗を防ぐ）
+    if(stream){ try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){} stream = null; }
     video = document.getElementById('video');
+    if(video){ try{ video.srcObject = null; }catch(e){} }
+    const camErr = document.getElementById('camErr');
+    if(camErr){ camErr.style.display = 'none'; }
   }
   resetBtn.addEventListener('click', () => {
     if(confirm('読取り履歴をリセットして最初からやり直しますか？')){
