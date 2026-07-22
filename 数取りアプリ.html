@@ -132,6 +132,8 @@
   .status-line.live:before{content:"● ";}
   .reader-line{text-align:center;font-size:12px;color:var(--sub);margin-bottom:10px;}
   .reader-line b{color:var(--text);}
+  .ref-line{text-align:center;font-size:13px;color:var(--sub);margin-bottom:6px;}
+  .ref-line b{color:var(--amber);font-family:var(--mono);letter-spacing:.05em;}
 
   .scanbox{
     position:relative;width:100%;aspect-ratio:1/1;
@@ -219,26 +221,29 @@
         </div>
 
         <button class="btn" id="startBtn">スキャン開始</button>
-        <div class="hint">入力した枚数と、連続でスキャンした枚数・内容が一致するかを自動チェックします。同じコードを2回読む、または枚数が合わない場合はNGになります。読取り結果はCSVで書き出せます。</div>
+        <div class="hint">同一品番であるべき枚数を入力します。最初に読んだQRを「基準品番」として記憶し、2枚目以降が基準と一致すればOK、違う品番が混ざっていればNGにします。指定枚数に達すると完了です。結果はCSVで書き出せます。</div>
       </div>
     </div>
 
     <div id="screenScan" style="display:none;">
       <div class="reader-line">読取者: <b id="readerNameShow">-</b></div>
+      <div class="ref-line" id="refLine">基準品番: <b id="refCodeShow">未設定（1枚目を読取り）</b></div>
       <div class="tally">
         <div class="digits" id="digitsCount">0</div>
         <div class="of">/</div>
         <div class="total" id="digitsTotal">0</div>
       </div>
-      <div class="status-line live" id="statusLine">カメラでQRコードを読み取ってください</div>
+      <div class="status-line live" id="statusLine">QRを枠内に写して「この1枚を読み取る」を押す</div>
 
       <div class="scanbox" id="scanbox">
         <video id="video" playsinline webkit-playsinline muted autoplay></video>
         <div class="frame"></div>
       </div>
-      <div class="hint" style="text-align:center;margin-top:10px;">うまく認識しない場合は下の「撮影して読み取る」がおすすめです（ピントが合いやすい）</div>
+
+      <button class="btn" id="frameBtn" style="margin-top:12px;font-size:18px;padding:18px;">この1枚を読み取る</button>
+      <div class="hint" style="text-align:center;margin-top:8px;">1枚ごとにボタンを押してください（1タップ＝1枚）。ピントが合わず読めない時は「📷 撮影して読み取る」を使用。</div>
       <input type="file" id="captureInput" accept="image/*" capture="environment" style="display:none;">
-      <button class="btn" id="captureBtn" style="margin-top:10px;">📷 撮影して読み取る</button>
+      <button class="btn secondary" id="captureBtn" style="margin-top:8px;">📷 撮影して読み取る（高精度）</button>
 
       <div class="actions-row">
         <button class="btn secondary" id="resetBtn" style="flex:1;">リセット</button>
@@ -281,8 +286,10 @@
   const digitsCount = $('digitsCount');
   const digitsTotal = $('digitsTotal');
   const statusLine = $('statusLine');
-  const video = $('video');
+  let video = $('video');
   const scanbox = $('scanbox');
+  const frameBtn = $('frameBtn');
+  const refCodeShow = $('refCodeShow');
   const logList = $('logList');
   const logEmpty = $('logEmpty');
   const resetBtn = $('resetBtn');
@@ -299,6 +306,7 @@
 
   let readerName = '';
   let expectedTotal = 0;
+  let referenceCode = null; // 最初に読んだ基準品番
   let scannedList = [];
   let scannedSet = new Set();
   let fullLog = [];
@@ -395,9 +403,9 @@
     return s;
   }
   function buildCsv(){
-    const rows = [['読取者','No','12桁コード','結果','読取日時','予定枚数','確定読取枚数']];
+    const rows = [['読取者','基準品番','No','12桁コード','結果','読取日時','予定枚数','確定読取枚数']];
     fullLog.forEach(item => {
-      rows.push([readerName, item.no, item.code || '', item.result, fmtTime(item.time), expectedTotal, scannedList.length]);
+      rows.push([readerName, referenceCode || '', item.no, item.code || '', item.result, fmtTime(item.time), expectedTotal, scannedList.length]);
     });
     return rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
   }
@@ -443,7 +451,7 @@
     div.className = 'overlay done';
     div.innerHTML = `
       <div class="big">OK 完了</div>
-      <div class="sub">読取者: ${readerName}<br>${expectedTotal} / ${expectedTotal} 枚 一致しました</div>
+      <div class="sub">読取者: ${readerName}<br>基準品番: ${referenceCode || '-'}<br>${expectedTotal} / ${expectedTotal} 枚すべて一致（異品番なし）</div>
       <button class="btn" id="doneCsvBtn">CSV出力</button>
       <button class="btn csv2" id="doneResetBtn">最初からやり直す</button>
     `;
@@ -456,6 +464,11 @@
   }
 
   async function startCamera(){
+    // リセット等でvideo要素が差し替わっている場合に備え、毎回取得し直す
+    video = document.getElementById('video');
+    // 既存ストリームが残っていれば停止
+    if(stream){ try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){} stream = null; }
+    statusLine.classList.add('live');
     try{
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -466,10 +479,10 @@
         audio: false
       });
       video.srcObject = stream;
+      video.setAttribute('playsinline','');
       await video.play();
-      statusLine.textContent = 'カメラでQRコードを読み取ってください';
+      statusLine.textContent = 'QRを枠内に写して「この1枚を読み取る」を押す';
       statusLine.classList.add('live');
-      loopScan();
     }catch(err){
       scanbox.innerHTML = `<div class="camerr">カメラを起動できませんでした。<br>iPhoneの場合は「設定 &gt; Safari &gt; カメラ」で許可を確認してください。<br>カメラが使えない場合は下の「手入力」から登録できます。<br><span style="color:#666">(${err.message||err})</span></div>`;
       statusLine.textContent = 'カメラ利用不可 — 手入力を使用してください';
@@ -480,33 +493,48 @@
     if(rafId) cancelAnimationFrame(rafId);
     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
   }
-  let scanBusy = false;
-  let lastScanAt = 0;
+  // ライブ映像は「照準用」のみ。自動カウントはしない（同一品番QRは区別できないため）。
   function loopScan(){
-    rafId = requestAnimationFrame(loopScan);
-    if(locked) return;
-    if(Date.now() < cooldownUntil) return;
-    if(!video.videoWidth) return;
-    // zbar解析は重いので約300msごとに実行、かつ前回の解析完了を待つ
-    if(scanBusy) return;
-    if(Date.now() - lastScanAt < 300) return;
-    lastScanAt = Date.now();
-    scanBusy = true;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    decodeImageData(imgData).then(result => {
-      scanBusy = false;
-      if(result && !locked){
-        handleScan(result);
-      }
-    }).catch(() => { scanBusy = false; });
+    // 何もしない（映像はvideo要素がそのまま表示）。将来の拡張用に残置。
   }
 
-  function handleScan(rawData){
+  // 現在のカメラ映像から1フレームを取り込んで解析（「この1枚を読み取る」用）
+  async function scanCurrentFrame(){
+    if(locked) return;
+    if(!video || !video.videoWidth){
+      statusLine.textContent = 'カメラ準備中です。少し待って再度押してください';
+      return;
+    }
+    frameBtn.disabled = true;
+    frameBtn.textContent = '読取り中…';
+    try{
+      // 密度の高いQRに備え複数解像度で試行
+      const vw = video.videoWidth, vh = video.videoHeight;
+      const targets = [Math.max(vw, vh), 1600, 1200];
+      let result = null;
+      for(const t of targets){
+        const scale = Math.min(1, t / Math.max(vw, vh));
+        const w = Math.round(vw * scale), h = Math.round(vh * scale);
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const imgData = ctx.getImageData(0, 0, w, h);
+        result = await decodeImageData(imgData);
+        if(result) break;
+      }
+      if(result){
+        handleScan(result, 'frame');
+      } else {
+        soundErr();
+        statusLine.textContent = '読み取れませんでした。近づけて再度押すか「📷 撮影」を使用';
+      }
+    } finally {
+      frameBtn.disabled = false;
+      frameBtn.textContent = 'この1枚を読み取る';
+    }
+  }
+
+  function handleScan(rawData, source){
     const code = extractCode(rawData);
-    cooldownUntil = Date.now() + 1200;
 
     if(!code){
       fullLog.push({ no: fullLog.length+1, code: rawData.slice(0,12), result: 'NG(抽出失敗)', time: new Date() });
@@ -515,28 +543,38 @@
       showOverlay('error', 'NG 読取エラー', `12桁のコードを抽出できませんでした。<br><br>読取った生データ:<br>${escapeHtml(rawData)}`);
       return;
     }
-    if(scannedSet.has(code)){
-      fullLog.push({ no: fullLog.length+1, code, result: 'NG(重複)', time: new Date() });
-      locked = true;
-      soundErr();
-      showOverlay('dup', 'NG 重複読み取り', `コード ${code} はすでに読み取り済みです。`);
-      return;
-    }
+
+    // 枚数超過チェック
     if(scannedList.length >= expectedTotal){
       fullLog.push({ no: fullLog.length+1, code, result: 'NG(枚数超過)', time: new Date() });
       locked = true;
       soundErr();
-      showOverlay('error', 'NG 枚数超過', `入力枚数(${expectedTotal}枚)を超えています。`);
+      showOverlay('error', 'NG 枚数超過', `指定枚数(${expectedTotal}枚)を超えています。`);
       return;
     }
 
-    scannedSet.add(code);
+    // 1枚目 → 基準品番として登録
+    if(referenceCode === null){
+      referenceCode = code;
+      refCodeShow.textContent = code;
+    } else if(code !== referenceCode){
+      // 基準と違う → 異品番混入NG
+      fullLog.push({ no: fullLog.length+1, code, result: 'NG(異品番混入)', time: new Date() });
+      locked = true;
+      soundErr();
+      showOverlay('error', 'NG 異品番混入', `基準品番 ${referenceCode} と異なります。<br><br>読取ったコード:<br>${code}`);
+      return;
+    }
+
+    // OK（基準と一致、または1枚目）
     const time = new Date();
     scannedList.push({ code, time });
+    scannedSet.add(code);
     fullLog.push({ no: fullLog.length+1, code, result: 'OK', time });
     renderLog();
     renderCount();
     soundOk();
+    statusLine.textContent = `${scannedList.length}枚目 OK — 次の1枚を写して押してください`;
 
     if(scannedList.length === expectedTotal){
       locked = true;
@@ -566,11 +604,13 @@
 
     readerName = name;
     expectedTotal = v;
+    referenceCode = null;
     scannedList = [];
     scannedSet = new Set();
     fullLog = [];
     hdrBadge.textContent = `${readerName} / 予定 ${expectedTotal} 枚`;
     readerNameShow.textContent = readerName;
+    refCodeShow.textContent = '未設定（1枚目を読取り）';
     screenSetup.style.display = 'none';
     screenScan.style.display = 'block';
     renderCount();
@@ -580,6 +620,7 @@
 
   function hardReset(){
     stopCamera();
+    referenceCode = null;
     scannedList = [];
     scannedSet = new Set();
     fullLog = [];
@@ -595,12 +636,15 @@
     screenScan.style.display = 'none';
     screenSetup.style.display = 'block';
     scanbox.innerHTML = `<video id="video" playsinline webkit-playsinline muted autoplay></video><div class="frame"></div>`;
+    video = document.getElementById('video');
   }
   resetBtn.addEventListener('click', () => {
     if(confirm('読取り履歴をリセットして最初からやり直しますか？')){
       hardReset();
     }
   });
+
+  frameBtn.addEventListener('click', scanCurrentFrame);
 
   captureBtn.addEventListener('click', () => {
     captureInput.value = '';
@@ -629,7 +673,7 @@
       }
       URL.revokeObjectURL(objUrl);
       if(result){
-        handleScan(result);
+        handleScan(result, 'photo');
       } else {
         locked = true;
         soundErr();
@@ -649,7 +693,7 @@
     const v = manualInput.value.trim();
     manualPanel.style.display = 'none';
     if(v.length === 12){
-      handleScan(v);
+      handleScan(v, 'manual');
     } else if(v.length > 0){
       locked = true;
       soundErr();
