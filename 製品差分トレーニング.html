@@ -88,6 +88,32 @@
   .start .steps b{color:var(--accent-ink);}
   .row-opt{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;font-size:14px;}
   select{font-size:14px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--line);}
+  input[type=text]{font-size:16px;padding:10px 12px;border-radius:8px;
+    border:1.5px solid var(--line);width:100%;max-width:300px;text-align:center;font-weight:700;}
+  input[type=text]:focus{outline:none;border-color:var(--accent);}
+
+  /* 集計表 */
+  .log{width:100%;margin-top:6px;}
+  .log h4{font-size:13px;letter-spacing:.1em;color:var(--muted);
+    margin:0 0 6px;text-align:left;font-weight:700;}
+  .tblwrap{overflow-x:auto;border:1.5px solid var(--line);border-radius:8px;background:#fff;}
+  table{border-collapse:collapse;width:100%;font-size:12px;
+    font-variant-numeric:tabular-nums;white-space:nowrap;}
+  th,td{padding:7px 9px;border-bottom:1px solid #e8eae8;text-align:right;}
+  th{background:var(--accent-ink);color:#fff;font-weight:700;
+    letter-spacing:.05em;position:sticky;top:0;}
+  th:first-child,td:first-child{text-align:left;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:nth-child(even){background:#f7f9f7;}
+  td.low{color:var(--alert);font-weight:800;}
+  td.high{color:var(--accent);font-weight:800;}
+  .btn-sub{background:#fff;color:var(--ink);border:1.5px solid var(--ink);
+    font-size:14px;padding:12px;}
+  .btn-danger{background:#fff;color:var(--alert);border:1.5px solid var(--alert);
+    font-size:13px;padding:10px;}
+  .btnrow{display:flex;gap:8px;width:100%;max-width:340px;}
+  .btnrow .btn{flex:1;}
+  .empty{font-size:12px;color:var(--muted);padding:14px;text-align:center;}
   .result .rate{font-size:56px;font-weight:800;color:var(--accent);line-height:1;}
   .result .rlbl{font-size:13px;color:var(--muted);letter-spacing:.1em;}
   .result .detail{font-size:14px;line-height:1.7;}
@@ -107,6 +133,9 @@
       ② 下段で違う製品を<b>タップ</b><br>
       ③ 違いが無ければ「相違なし」<br>
       ④ 「判定する」で答え合わせ
+    </div>
+    <div class="row-opt">
+      <input id="userName" type="text" placeholder="氏名を入力" autocomplete="off">
     </div>
     <div class="row-opt">
       問題数
@@ -172,7 +201,17 @@
     <div class="rate"><span id="finalRate">0</span>%</div>
     <div class="detail" id="finalDetail"></div>
     <div class="msg" id="finalMsg"></div>
-    <button class="btn btn-primary" style="width:100%;max-width:300px" onclick="location.reload()">もう一度</button>
+
+    <div class="log">
+      <h4>訓練記録（集計表）</h4>
+      <div class="tblwrap" id="tblwrap"></div>
+    </div>
+
+    <div class="btnrow">
+      <button class="btn btn-primary" onclick="location.reload()">もう一度</button>
+      <button class="btn btn-sub" onclick="exportCSV()">CSV出力</button>
+    </div>
+    <button class="btn btn-danger" style="width:100%;max-width:340px" onclick="clearLog()">記録を全消去</button>
   </div>
 
 </div>
@@ -256,8 +295,13 @@ function mutate(p){
 /* ===== 進行 ===== */
 let questions=[],qi=0,correct=0,total=10;
 let selected=new Set(),answered=false,t0=0,timerId=null,times=[];
+let userName="";
+let logRows=[];   // 訓練記録（1回1行）
 
 function startGame(){
+  const nm=document.getElementById('userName').value.trim();
+  if(!nm){ alert('氏名を入力してください'); document.getElementById('userName').focus(); return; }
+  userName=nm;
   total=parseInt(qCount.value,10);
   level=document.getElementById('level').value;
   CELLS=parseInt(document.getElementById('cellCount').value,10);
@@ -344,8 +388,84 @@ function showResult(){
   else if(rate>=50)msg='要注意。見る順番を固定しましょう。';
   else msg='思い込みが強く出ています。1件完結・発声確認を徹底。';
   finalMsg.textContent=msg;
+
+  // ---- 記録を保存 ----
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const levelLabel={easy:'やさしい',normal:'ふつう',hard:'むずかしい'}[level];
+  logRows.push({
+    date:`${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())}`,
+    time:`${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    name:userName,
+    level:levelLabel,
+    cells:CELLS,
+    total:total,
+    correct:correct,
+    rate:rate,
+    avg:avg
+  });
+  saveLog();
+  renderTable();
   resultScreen.classList.add('show');
 }
+
+/* ===== 記録の保存・表示・出力 ===== */
+function saveLog(){
+  try{ sessionStorage.setItem('drillLog',JSON.stringify(logRows)); }catch(e){}
+}
+function loadLog(){
+  try{
+    const s=sessionStorage.getItem('drillLog');
+    if(s) logRows=JSON.parse(s);
+  }catch(e){ logRows=[]; }
+}
+function renderTable(){
+  const w=document.getElementById('tblwrap');
+  if(!logRows.length){ w.innerHTML='<div class="empty">記録はまだありません</div>'; return; }
+  let h='<table><thead><tr>'
+    +'<th>氏名</th><th>日付</th><th>時刻</th><th>難易度</th><th>製品数</th>'
+    +'<th>問題数</th><th>正解</th><th>正答率</th><th>平均秒</th>'
+    +'</tr></thead><tbody>';
+  // 新しい順
+  [...logRows].reverse().forEach(r=>{
+    const cls = r.rate>=80?'high' : r.rate<50?'low' : '';
+    h+=`<tr><td>${esc(r.name)}</td><td>${r.date}</td><td>${r.time}</td>`
+      +`<td>${r.level}</td><td>${r.cells}</td><td>${r.total}</td>`
+      +`<td>${r.correct}</td><td class="${cls}">${r.rate}%</td><td>${r.avg}</td></tr>`;
+  });
+  h+='</tbody></table>';
+  w.innerHTML=h;
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function exportCSV(){
+  if(!logRows.length){ alert('出力する記録がありません'); return; }
+  const head=['氏名','日付','時刻','難易度','製品数','問題数','正解数','正答率(%)','平均秒'];
+  const lines=[head.join(',')];
+  logRows.forEach(r=>{
+    lines.push([q(r.name),r.date,r.time,r.level,r.cells,r.total,r.correct,r.rate,r.avg].join(','));
+  });
+  // Excelの文字化け防止にBOM付与
+  const bom='\uFEFF';
+  const blob=new Blob([bom+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const d=new Date(), pad=n=>String(n).padStart(2,'0');
+  const fname=`製品差分訓練_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.csv`;
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=fname; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function q(s){
+  s=String(s);
+  return /[",\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+}
+function clearLog(){
+  if(!confirm('保存されている訓練記録をすべて消去します。よろしいですか？')) return;
+  logRows=[]; saveLog(); renderTable();
+}
+
+loadLog();
 </script>
 </body>
 </html>
