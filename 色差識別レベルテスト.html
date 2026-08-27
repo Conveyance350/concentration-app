@@ -27,7 +27,8 @@
   p.sub{font-size:13px; color:#3A3F44; margin:0 0 16px;}
   ul.notes{font-size:13px; line-height:1.9; color:var(--mute); padding-left:18px; margin:0 0 18px;}
   label.fld{font-size:13px; font-weight:700; color:#3A3F44; display:block; margin-bottom:6px;}
-  input[type=text]{width:100%; font-size:15px; padding:10px 12px; border:1px solid var(--line); border-radius:8px;}
+  input[type=text],select.fldsel{width:100%; font-size:15px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink);}
+  .name-other{margin-top:8px;}
   input.num{font-size:22px; text-align:center; padding:10px 12px; margin-bottom:14px;}
   .btnP{width:100%; padding:12px 16px; background:var(--navy); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer;}
   .btnP:disabled{opacity:.45; cursor:not-allowed;}
@@ -53,7 +54,6 @@
   .axisbar{height:6px; background:var(--line); border-radius:3px; overflow:hidden;}
   .warn{font-size:12px; color:#3A3F44; background:rgba(199,122,30,.07); border:1px solid rgba(199,122,30,.27); border-radius:8px; padding:10px 12px; margin-bottom:16px;}
   .disc{font-size:12px; color:var(--mute); line-height:1.8; margin:0 0 18px;}
-  .spacer{height:10px;}
 </style>
 </head>
 <body>
@@ -67,6 +67,51 @@
 
 <script>
 // ===== 定数・データ =========================================================
+const MEMBERS = [
+  "ｱﾗﾏｷﾕｳｼﾞ","ｱﾜｷｴｲﾄ","ｱﾝﾄﾞｳﾘｭｳｼﾞ","ｲｲﾀﾞﾀｸﾔ","ｲｼｶﾜｿｳﾀ","ｲﾄｳﾘｮｳｺﾞ",
+  "ｲﾅﾄｼﾔｽ","ｲﾉｳｴﾊﾙﾄ","ｲﾏｲﾔｽﾋﾛ","ｲﾏﾑﾗﾕｳﾄ","ｳﾁﾔﾏﾉﾎﾞﾙ","ｵｵｶﾞﾘｮｳﾔ",
+  "ｵｷﾀﾅｵﾕｷ","ｵｸﾉﾘｭｳｲﾁ","ｵｸﾞﾗｹﾝ","ｵﾁｱｲﾀﾞｲｽｹ","ｵﾉｳｴﾏｻｱｷ","ｶﾂﾉｼﾞｭﾝｼﾞ",
+  "ｶﾈｺﾀｹｼ","ｷｼｶﾞﾐｱﾔｷ","ｷﾄｳﾉﾌﾞﾏｻ","ｸｻﾂﾞﾐｱｷﾗ","ｸﾗﾀﾄｼﾔ","ｸﾛｷﾘｮｳｽｹ",
+  "ｸﾛﾀﾞﾀｶﾉﾌﾞ","ｺﾄｳﾄﾓｶｽﾞ","ｺﾝﾄﾞｳﾀｶﾕｷ","ｼｹﾞﾀﾊﾔﾄ","ｼﾊﾞﾀﾄﾓﾔ","ｽｷﾞﾓﾄｼｮｳｷ",
+  "ｽｷﾞﾔﾏﾉﾌﾞﾋｺ","ｽｽﾞｷｱｷﾋﾛ","ｽｽﾞｷﾄｼﾐﾂ","ｽｽﾞｷﾏｻﾐ","ﾀｶﾊｼﾕｳｽｹ","ﾂｶﾓﾄﾃｯﾍﾟｲ",
+  "ﾂﾙﾏﾙﾕｳﾀ","ﾄｸﾀﾞﾋﾃﾞｷ","ﾄﾐﾀﾀｶﾕｷ","ﾄﾞｲﾕｳﾏ","ﾅｶｼﾏｶｽﾞｵ","ﾅｶﾔﾏﾋﾛｷ",
+  "ﾅｶﾞｴｱﾂｷ","ﾆｼﾔﾏﾋﾛﾉﾘ","ﾊｷﾞﾜﾗｹｲｽｹ","ﾌｸﾀﾞﾃﾂﾔ","ﾌﾙｲｻﾄｼ","ﾌﾙﾔﾅｵｷ",
+  "ﾏﾂｵｶﾂﾐ","ﾏﾂﾀﾞﾀｶｼ","ﾏﾂﾊﾞﾗﾕﾀｶ","ﾐｳﾗｼﾝｲﾁ","ﾐﾔｻﾞｷｺｳﾀﾞｲ","ﾔｻﾞｷﾖｳｽｹ",
+  "ﾔﾉｱｷﾉﾘ","ﾔﾏｸﾞﾁﾅｵﾕｷ","ﾔﾏｼﾀｼﾞｭﾝ","ﾔﾏﾓﾄﾀｶﾋﾛ"
+];
+
+/* 一覧にない氏名は「直接入力」を選ぶとテキスト欄が出る */
+function setupNameSelect(sel, preset, onChange) {
+  const opt = document.createElement('option');
+  opt.value = '__other__';
+  opt.textContent = '※ 一覧にない場合（直接入力）';
+  sel.appendChild(opt);
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = '氏名を直接入力';
+  inp.className = (sel.className ? sel.className + ' ' : '') + 'name-other';
+  inp.style.display = 'none';
+  sel.parentNode.insertBefore(inp, sel.nextSibling);
+
+  const getName = () => sel.value === '__other__' ? (inp.value.trim() || null) : (sel.value || null);
+  const sync = () => {
+    const other = sel.value === '__other__';
+    inp.style.display = other ? '' : 'none';
+    if (!other) inp.value = '';
+    if (onChange) onChange();
+  };
+  sel.addEventListener('change', () => { sync(); if (sel.value === '__other__') inp.focus(); });
+  inp.addEventListener('input', () => { if (onChange) onChange(); });
+
+  if (preset) {
+    if (Array.prototype.some.call(sel.options, o => o.value === preset)) sel.value = preset;
+    else { sel.value = '__other__'; inp.value = preset; }
+  }
+  sync();
+  return getName;
+}
+
 const T = { good:"#2F6B3A", bad:"#B23B2E", amber:"#C77A1E", navy:"#1B2A41" };
 const TIME_LIMIT = 4000;
 const MAX_LEVEL = 6;
@@ -159,7 +204,10 @@ function renderIntro(){
     <p class="lead">数字図版で明確な色覚異常を一次スクリーニングした後、複数の色軸で色差を段階的に詰め、「どこまで細かい色違いを見分けられるか」を測定します。各段階の色差は全軸で知覚的に揃えてあり、軸ごとの難易度は公平です。各問に制限時間があり、現場の瞬時判断に近い条件で確認します。所要約4分。</p>
     <div style="margin-bottom:16px;">
       <label class="fld">氏名（受検者）</label>
-      <input type="text" id="nameInput" placeholder="例）山田 太郎" value="${S.name.replace(/"/g,'&quot;')}">
+      <select class="fldsel" id="nameInput">
+        <option value="">氏名を選択してください</option>
+        ${MEMBERS.map(n=>`<option value="${n}" ${n===S.name?"selected":""}>${n}</option>`).join("")}
+      </select>
     </div>
     <ul class="notes">
       <li>画面の明るさを最大付近にし、屋内の白色光の下で実施</li>
@@ -167,18 +215,19 @@ function renderIntro(){
       <li>正解するほど色差が小さくなり、見分けられなくなった段階がその色軸の識別限界</li>
       <li>本アプリは簡易スクリーニング。所見ありなら眼科・産業医の受診へ</li>
     </ul>
-    <button class="btnP" id="startBtn" disabled>氏名を入力してください</button>
+    <button class="btnP" id="startBtn" disabled>氏名を選択してください</button>
   </div>`;
-  const input=document.getElementById("nameInput");
+  const sel=document.getElementById("nameInput");
   const btn=document.getElementById("startBtn");
+  let getName=()=>sel.value;
   const sync=()=>{
-    S.name=input.value;
-    const ok=input.value.trim().length>0;
+    S.name=getName()||"";
+    const ok=S.name.length>0;
     btn.disabled=!ok;
-    btn.textContent = ok ? "検査を開始" : "氏名を入力してください";
+    btn.textContent = ok ? "検査を開始" : "氏名を選択してください";
   };
-  input.addEventListener("input", sync); sync();
-  btn.addEventListener("click", ()=>{ if(input.value.trim()){ S.stage="plates"; S.pi=0; S.pAns=[]; render(); }});
+  getName=setupNameSelect(sel, S.name, sync);
+  btn.addEventListener("click", ()=>{ if(getName()){ S.stage="plates"; S.pi=0; S.pAns=[]; render(); }});
 }
 
 // ===== 画面：数字図版 =======================================================

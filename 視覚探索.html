@@ -49,7 +49,9 @@
 
   <div class="ct-row">
     <label for="ct-name">氏名</label>
-    <input id="ct-name" class="ct-input" type="text" placeholder="氏名を入力（例：山田太郎）">
+    <select id="ct-name" class="ct-input">
+      <option value="">氏名を選択してください</option>
+    </select>
   </div>
 
   <div class="ct-tabs">
@@ -95,9 +97,6 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const STORE_KEY = 'vsearch_records_v1';
-  // ▼ここに配布用のWebアプリURLを貼り付け（Google Apps Script）
-  const WEBAPP_URL = 'ここにデプロイURLを貼り付け';
-  const TEST_TYPE = '視覚探索';
   const TOTAL = 10;
 
   // 似た記号ペア（探索対象／妨害刺激）
@@ -116,27 +115,71 @@
     });
   });
 
-  function getName() { const v = $('#ct-name').value.trim(); return v || null; }
+  const MEMBERS = [
+    "ｱﾗﾏｷﾕｳｼﾞ","ｱﾜｷｴｲﾄ","ｱﾝﾄﾞｳﾘｭｳｼﾞ","ｲｲﾀﾞﾀｸﾔ","ｲｼｶﾜｿｳﾀ","ｲﾄｳﾘｮｳｺﾞ",
+    "ｲﾅﾄｼﾔｽ","ｲﾉｳｴﾊﾙﾄ","ｲﾏｲﾔｽﾋﾛ","ｲﾏﾑﾗﾕｳﾄ","ｳﾁﾔﾏﾉﾎﾞﾙ","ｵｵｶﾞﾘｮｳﾔ",
+    "ｵｷﾀﾅｵﾕｷ","ｵｸﾉﾘｭｳｲﾁ","ｵｸﾞﾗｹﾝ","ｵﾁｱｲﾀﾞｲｽｹ","ｵﾉｳｴﾏｻｱｷ","ｶﾂﾉｼﾞｭﾝｼﾞ",
+    "ｶﾈｺﾀｹｼ","ｷｼｶﾞﾐｱﾔｷ","ｷﾄｳﾉﾌﾞﾏｻ","ｸｻﾂﾞﾐｱｷﾗ","ｸﾗﾀﾄｼﾔ","ｸﾛｷﾘｮｳｽｹ",
+    "ｸﾛﾀﾞﾀｶﾉﾌﾞ","ｺﾄｳﾄﾓｶｽﾞ","ｺﾝﾄﾞｳﾀｶﾕｷ","ｼｹﾞﾀﾊﾔﾄ","ｼﾊﾞﾀﾄﾓﾔ","ｽｷﾞﾓﾄｼｮｳｷ",
+    "ｽｷﾞﾔﾏﾉﾌﾞﾋｺ","ｽｽﾞｷｱｷﾋﾛ","ｽｽﾞｷﾄｼﾐﾂ","ｽｽﾞｷﾏｻﾐ","ﾀｶﾊｼﾕｳｽｹ","ﾂｶﾓﾄﾃｯﾍﾟｲ",
+    "ﾂﾙﾏﾙﾕｳﾀ","ﾄｸﾀﾞﾋﾃﾞｷ","ﾄﾐﾀﾀｶﾕｷ","ﾄﾞｲﾕｳﾏ","ﾅｶｼﾏｶｽﾞｵ","ﾅｶﾔﾏﾋﾛｷ",
+    "ﾅｶﾞｴｱﾂｷ","ﾆｼﾔﾏﾋﾛﾉﾘ","ﾊｷﾞﾜﾗｹｲｽｹ","ﾌｸﾀﾞﾃﾂﾔ","ﾌﾙｲｻﾄｼ","ﾌﾙﾔﾅｵｷ",
+    "ﾏﾂｵｶﾂﾐ","ﾏﾂﾀﾞﾀｶｼ","ﾏﾂﾊﾞﾗﾕﾀｶ","ﾐｳﾗｼﾝｲﾁ","ﾐﾔｻﾞｷｺｳﾀﾞｲ","ﾔｻﾞｷﾖｳｽｹ",
+    "ﾔﾉｱｷﾉﾘ","ﾔﾏｸﾞﾁﾅｵﾕｷ","ﾔﾏｼﾀｼﾞｭﾝ","ﾔﾏﾓﾄﾀｶﾋﾛ"
+  ];
+
+  /* 一覧にない氏名は「直接入力」を選ぶとテキスト欄が出る */
+  function setupNameSelect(sel, preset, onChange) {
+    const opt = document.createElement('option');
+    opt.value = '__other__';
+    opt.textContent = '※ 一覧にない場合（直接入力）';
+    sel.appendChild(opt);
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = '氏名を直接入力';
+    inp.className = (sel.className ? sel.className + ' ' : '') + 'name-other';
+    inp.style.display = 'none';
+    sel.parentNode.insertBefore(inp, sel.nextSibling);
+
+    const getName = () => sel.value === '__other__' ? (inp.value.trim() || null) : (sel.value || null);
+    const sync = () => {
+      const other = sel.value === '__other__';
+      inp.style.display = other ? '' : 'none';
+      if (!other) inp.value = '';
+      if (onChange) onChange();
+    };
+    sel.addEventListener('change', () => { sync(); if (sel.value === '__other__') inp.focus(); });
+    inp.addEventListener('input', () => { if (onChange) onChange(); });
+
+    if (preset) {
+      if (Array.prototype.some.call(sel.options, o => o.value === preset)) sel.value = preset;
+      else { sel.value = '__other__'; inp.value = preset; }
+    }
+    sync();
+    return getName;
+  }
+
+  const getName = (function () {
+    const sel = $('#ct-name');
+    MEMBERS.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); });
+    return setupNameSelect(sel);
+  })();
   function readRecords() { try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : []; } catch (e) { return []; } }
   function writeRecords(r) { try { localStorage.setItem(STORE_KEY, JSON.stringify(r)); return true; } catch (e) { alert('記録の保存に失敗しました'); return false; } }
-  function sendToSheet(payload) {
-    if (!WEBAPP_URL || WEBAPP_URL.indexOf('http') !== 0) return;
-    try { fetch(WEBAPP_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) }).catch(() => {}); } catch (e) {}
-  }
   function saveRecord(scoreValue) {
     const name = getName();
-    if (!name) { alert('氏名を入力してください'); return false; }
+    if (!name) { alert('氏名を選択してください'); return false; }
     const now = new Date();
     const rec = { name, scoreValue, date: now.toISOString().slice(0, 10), ts: now.getTime() };
     const records = readRecords(); records.push(rec);
-    sendToSheet({ name, type: TEST_TYPE, scoreValue, extra: '', date: rec.date });
     return writeRecords(records);
   }
 
   let round = 0, startTime = null, timerHandle = null, running = false;
 
   function startTest() {
-    if (!getName()) { alert('氏名を入力してください'); return; }
+    if (!getName()) { alert('氏名を選択してください'); return; }
     round = 0; running = true;
     $('#vs-result').textContent = ''; $('#vs-flash').textContent = '';
     $('#vs-start').disabled = true;

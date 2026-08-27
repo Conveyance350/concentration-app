@@ -58,9 +58,13 @@
   .row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;}
   .field{display:flex;flex-direction:column;gap:6px;}
   .field label{font-size:12px;color:#4a5a54;}
-  .field input[type=text]{
+  .field .name-other{
     border:1px solid var(--line);padding:8px 10px;font-size:14px;
-    border-radius:2px;min-width:160px;font-family:inherit;
+    border-radius:2px;min-width:200px;font-family:inherit;margin-top:6px;
+  }
+  .field select{
+    border:1px solid var(--line);padding:8px 10px;font-size:14px;
+    border-radius:2px;min-width:200px;font-family:inherit;background:var(--panel);color:var(--ink);
   }
   .seg{display:flex;border:1px solid var(--line);border-radius:2px;overflow:hidden;}
   .seg button{
@@ -170,7 +174,9 @@
     <div class="row">
       <div class="field">
         <label>受講者名</label>
-        <input type="text" id="playerName" placeholder="例：山田">
+        <select id="playerName">
+          <option value="">氏名を選択してください</option>
+        </select>
       </div>
       <div class="field">
         <label>表示時間（フラッシュ速度）</label>
@@ -247,11 +253,64 @@
   const startBtn = document.getElementById('startBtn');
   const resetBtn = document.getElementById('resetBtn');
   const speedSeg = document.getElementById('speedSeg');
-  const playerNameInput = document.getElementById('playerName');
+  const playerNameSelect = document.getElementById('playerName');
   const logWrap = document.getElementById('logWrap');
   const resultPanel = document.getElementById('resultPanel');
   const accTable = document.getElementById('accTable');
   const summaryText = document.getElementById('summaryText');
+
+  const MEMBERS = [
+    "ｱﾗﾏｷﾕｳｼﾞ","ｱﾜｷｴｲﾄ","ｱﾝﾄﾞｳﾘｭｳｼﾞ","ｲｲﾀﾞﾀｸﾔ","ｲｼｶﾜｿｳﾀ","ｲﾄｳﾘｮｳｺﾞ",
+    "ｲﾅﾄｼﾔｽ","ｲﾉｳｴﾊﾙﾄ","ｲﾏｲﾔｽﾋﾛ","ｲﾏﾑﾗﾕｳﾄ","ｳﾁﾔﾏﾉﾎﾞﾙ","ｵｵｶﾞﾘｮｳﾔ",
+    "ｵｷﾀﾅｵﾕｷ","ｵｸﾉﾘｭｳｲﾁ","ｵｸﾞﾗｹﾝ","ｵﾁｱｲﾀﾞｲｽｹ","ｵﾉｳｴﾏｻｱｷ","ｶﾂﾉｼﾞｭﾝｼﾞ",
+    "ｶﾈｺﾀｹｼ","ｷｼｶﾞﾐｱﾔｷ","ｷﾄｳﾉﾌﾞﾏｻ","ｸｻﾂﾞﾐｱｷﾗ","ｸﾗﾀﾄｼﾔ","ｸﾛｷﾘｮｳｽｹ",
+    "ｸﾛﾀﾞﾀｶﾉﾌﾞ","ｺﾄｳﾄﾓｶｽﾞ","ｺﾝﾄﾞｳﾀｶﾕｷ","ｼｹﾞﾀﾊﾔﾄ","ｼﾊﾞﾀﾄﾓﾔ","ｽｷﾞﾓﾄｼｮｳｷ",
+    "ｽｷﾞﾔﾏﾉﾌﾞﾋｺ","ｽｽﾞｷｱｷﾋﾛ","ｽｽﾞｷﾄｼﾐﾂ","ｽｽﾞｷﾏｻﾐ","ﾀｶﾊｼﾕｳｽｹ","ﾂｶﾓﾄﾃｯﾍﾟｲ",
+    "ﾂﾙﾏﾙﾕｳﾀ","ﾄｸﾀﾞﾋﾃﾞｷ","ﾄﾐﾀﾀｶﾕｷ","ﾄﾞｲﾕｳﾏ","ﾅｶｼﾏｶｽﾞｵ","ﾅｶﾔﾏﾋﾛｷ",
+    "ﾅｶﾞｴｱﾂｷ","ﾆｼﾔﾏﾋﾛﾉﾘ","ﾊｷﾞﾜﾗｹｲｽｹ","ﾌｸﾀﾞﾃﾂﾔ","ﾌﾙｲｻﾄｼ","ﾌﾙﾔﾅｵｷ",
+    "ﾏﾂｵｶﾂﾐ","ﾏﾂﾀﾞﾀｶｼ","ﾏﾂﾊﾞﾗﾕﾀｶ","ﾐｳﾗｼﾝｲﾁ","ﾐﾔｻﾞｷｺｳﾀﾞｲ","ﾔｻﾞｷﾖｳｽｹ",
+    "ﾔﾉｱｷﾉﾘ","ﾔﾏｸﾞﾁﾅｵﾕｷ","ﾔﾏｼﾀｼﾞｭﾝ","ﾔﾏﾓﾄﾀｶﾋﾛ"
+  ];
+
+  MEMBERS.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    playerNameSelect.appendChild(o);
+  });
+
+  /* 一覧にない氏名は「直接入力」を選ぶとテキスト欄が出る */
+  function setupNameSelect(sel, preset, onChange) {
+    const opt = document.createElement('option');
+    opt.value = '__other__';
+    opt.textContent = '※ 一覧にない場合（直接入力）';
+    sel.appendChild(opt);
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = '氏名を直接入力';
+    inp.className = (sel.className ? sel.className + ' ' : '') + 'name-other';
+    inp.style.display = 'none';
+    sel.parentNode.insertBefore(inp, sel.nextSibling);
+
+    const getName = () => sel.value === '__other__' ? (inp.value.trim() || null) : (sel.value || null);
+    const sync = () => {
+      const other = sel.value === '__other__';
+      inp.style.display = other ? '' : 'none';
+      if (!other) inp.value = '';
+      if (onChange) onChange();
+    };
+    sel.addEventListener('change', () => { sync(); if (sel.value === '__other__') inp.focus(); });
+    inp.addEventListener('input', () => { if (onChange) onChange(); });
+
+    if (preset) {
+      if (Array.prototype.some.call(sel.options, o => o.value === preset)) sel.value = preset;
+      else { sel.value = '__other__'; inp.value = preset; }
+    }
+    sync();
+    return getName;
+  }
+
+  const getName = setupNameSelect(playerNameSelect);
 
   const RINGS = [
     {min:0.10, max:0.22, label:'リング1（中心近傍）'},
@@ -265,7 +324,6 @@
   let trials = [];
   let currentTrialIndex = 0;
   let results = [];
-  let running = false;
   let records = [];
 
   speedSeg.addEventListener('click', (e)=>{
@@ -291,7 +349,7 @@
 
   function buildTrials(){
     const list = [];
-    RINGS.forEach((ring, ringIndex)=>{
+    RINGS.forEach((_, ringIndex)=>{
       for(let i=0;i<REPS_PER_RING;i++){
         list.push({ringIndex});
       }
@@ -313,13 +371,13 @@
   }
 
   function startSession(){
+    if(!getName()){ alert('氏名を選択してください'); return; }
     trials = buildTrials();
     trialTotalEl.textContent = trials.length;
     currentTrialIndex = 0;
     results = [];
     correctCountEl.textContent = '0';
     trialCountEl.textContent = '0';
-    running = true;
     resultPanel.style.display = 'none';
     startBtn.disabled = true;
     overlay.classList.add('hide');
@@ -392,7 +450,6 @@
   }
 
   function finishSession(){
-    running = false;
     startBtn.disabled = false;
     overlayTitle.textContent = '測定完了';
     overlayText.textContent = '下に結果を表示しています。';
@@ -408,7 +465,7 @@
 
     renderResults(perRing);
 
-    const name = playerNameInput.value.trim() || '（未入力）';
+    const name = getName() || '（未選択）';
     let boundary = 'リング1未満';
     for(let i=0;i<perRing.length;i++){
       if(perRing[i].rate >= 70){
@@ -462,7 +519,6 @@
 
   startBtn.addEventListener('click', startSession);
   resetBtn.addEventListener('click', ()=>{
-    running = false;
     startBtn.disabled = false;
     overlayTitle.textContent = '準備できましたら「測定を開始」を押してください';
     overlayText.textContent = '中央の赤い点だけを見つめ続けてください。数字は瞬間的に表示されます。';

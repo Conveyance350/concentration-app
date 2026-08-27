@@ -88,9 +88,11 @@
   .start .steps b{color:var(--accent-ink);}
   .row-opt{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;font-size:14px;}
   select{font-size:14px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--line);}
-  input[type=text]{font-size:16px;padding:10px 12px;border-radius:8px;
+  .name-other{font-size:16px;padding:10px 12px;border-radius:8px;
     border:1.5px solid var(--line);width:100%;max-width:300px;text-align:center;font-weight:700;}
-  input[type=text]:focus{outline:none;border-color:var(--accent);}
+  select#userName{font-size:16px;padding:10px 12px;width:100%;max-width:300px;
+    text-align:center;font-weight:700;background:#fff;}
+  select:focus{outline:none;border-color:var(--accent);}
 
   /* 集計表 */
   .log{width:100%;margin-top:6px;}
@@ -135,7 +137,9 @@
       ④ 「判定する」で答え合わせ
     </div>
     <div class="row-opt">
-      <input id="userName" type="text" placeholder="氏名を入力" autocomplete="off">
+      <select id="userName">
+        <option value="">氏名を選択してください</option>
+      </select>
     </div>
     <div class="row-opt">
       問題数
@@ -217,6 +221,57 @@
 </div>
 
 <script>
+/* ===== 名簿（氏名プルダウン） ===== */
+const MEMBERS = [
+  "ｱﾗﾏｷﾕｳｼﾞ","ｱﾜｷｴｲﾄ","ｱﾝﾄﾞｳﾘｭｳｼﾞ","ｲｲﾀﾞﾀｸﾔ","ｲｼｶﾜｿｳﾀ","ｲﾄｳﾘｮｳｺﾞ",
+  "ｲﾅﾄｼﾔｽ","ｲﾉｳｴﾊﾙﾄ","ｲﾏｲﾔｽﾋﾛ","ｲﾏﾑﾗﾕｳﾄ","ｳﾁﾔﾏﾉﾎﾞﾙ","ｵｵｶﾞﾘｮｳﾔ",
+  "ｵｷﾀﾅｵﾕｷ","ｵｸﾉﾘｭｳｲﾁ","ｵｸﾞﾗｹﾝ","ｵﾁｱｲﾀﾞｲｽｹ","ｵﾉｳｴﾏｻｱｷ","ｶﾂﾉｼﾞｭﾝｼﾞ",
+  "ｶﾈｺﾀｹｼ","ｷｼｶﾞﾐｱﾔｷ","ｷﾄｳﾉﾌﾞﾏｻ","ｸｻﾂﾞﾐｱｷﾗ","ｸﾗﾀﾄｼﾔ","ｸﾛｷﾘｮｳｽｹ",
+  "ｸﾛﾀﾞﾀｶﾉﾌﾞ","ｺﾄｳﾄﾓｶｽﾞ","ｺﾝﾄﾞｳﾀｶﾕｷ","ｼｹﾞﾀﾊﾔﾄ","ｼﾊﾞﾀﾄﾓﾔ","ｽｷﾞﾓﾄｼｮｳｷ",
+  "ｽｷﾞﾔﾏﾉﾌﾞﾋｺ","ｽｽﾞｷｱｷﾋﾛ","ｽｽﾞｷﾄｼﾐﾂ","ｽｽﾞｷﾏｻﾐ","ﾀｶﾊｼﾕｳｽｹ","ﾂｶﾓﾄﾃｯﾍﾟｲ",
+  "ﾂﾙﾏﾙﾕｳﾀ","ﾄｸﾀﾞﾋﾃﾞｷ","ﾄﾐﾀﾀｶﾕｷ","ﾄﾞｲﾕｳﾏ","ﾅｶｼﾏｶｽﾞｵ","ﾅｶﾔﾏﾋﾛｷ",
+  "ﾅｶﾞｴｱﾂｷ","ﾆｼﾔﾏﾋﾛﾉﾘ","ﾊｷﾞﾜﾗｹｲｽｹ","ﾌｸﾀﾞﾃﾂﾔ","ﾌﾙｲｻﾄｼ","ﾌﾙﾔﾅｵｷ",
+  "ﾏﾂｵｶﾂﾐ","ﾏﾂﾀﾞﾀｶｼ","ﾏﾂﾊﾞﾗﾕﾀｶ","ﾐｳﾗｼﾝｲﾁ","ﾐﾔｻﾞｷｺｳﾀﾞｲ","ﾔｻﾞｷﾖｳｽｹ",
+  "ﾔﾉｱｷﾉﾘ","ﾔﾏｸﾞﾁﾅｵﾕｷ","ﾔﾏｼﾀｼﾞｭﾝ","ﾔﾏﾓﾄﾀｶﾋﾛ"
+];
+/* 一覧にない氏名は「直接入力」を選ぶとテキスト欄が出る */
+function setupNameSelect(sel, preset, onChange) {
+  const opt = document.createElement('option');
+  opt.value = '__other__';
+  opt.textContent = '※ 一覧にない場合（直接入力）';
+  sel.appendChild(opt);
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = '氏名を直接入力';
+  inp.className = (sel.className ? sel.className + ' ' : '') + 'name-other';
+  inp.style.display = 'none';
+  sel.parentNode.insertBefore(inp, sel.nextSibling);
+
+  const getName = () => sel.value === '__other__' ? (inp.value.trim() || null) : (sel.value || null);
+  const sync = () => {
+    const other = sel.value === '__other__';
+    inp.style.display = other ? '' : 'none';
+    if (!other) inp.value = '';
+    if (onChange) onChange();
+  };
+  sel.addEventListener('change', () => { sync(); if (sel.value === '__other__') inp.focus(); });
+  inp.addEventListener('input', () => { if (onChange) onChange(); });
+
+  if (preset) {
+    if (Array.prototype.some.call(sel.options, o => o.value === preset)) sel.value = preset;
+    else { sel.value = '__other__'; inp.value = preset; }
+  }
+  sync();
+  return getName;
+}
+
+const getName=(function(){
+  const sel=document.getElementById('userName');
+  MEMBERS.forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+  return setupNameSelect(sel);
+})();
+
 /* ===== 製品図の描画 ===== */
 const COLORS = {
   red:"#c1121f", blue:"#1e5aa8", green:"#0b8a4f",
@@ -299,8 +354,8 @@ let userName="";
 let logRows=[];   // 訓練記録（1回1行）
 
 function startGame(){
-  const nm=document.getElementById('userName').value.trim();
-  if(!nm){ alert('氏名を入力してください'); document.getElementById('userName').focus(); return; }
+  const nm=getName();
+  if(!nm){ alert('氏名を選択してください'); document.getElementById('userName').focus(); return; }
   userName=nm;
   total=parseInt(qCount.value,10);
   level=document.getElementById('level').value;
